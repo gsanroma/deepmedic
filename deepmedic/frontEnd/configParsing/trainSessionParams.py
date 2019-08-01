@@ -9,7 +9,7 @@ from __future__ import absolute_import, print_function, division
 
 from deepmedic.frontEnd.configParsing.utils import getAbsPathEvenIfRelativeIsGiven, parseAbsFileLinesInList, parseFileLinesInList, check_and_adjust_path_to_ckpt
 from deepmedic.dataManagement import samplingType
-
+from deepmedic.dataManagement.augmentImage import AugmenterAffineParams
 
 class TrainSessionParameters(object) :
     
@@ -105,8 +105,7 @@ class TrainSessionParameters(object) :
         
         #[Optionals]
         #~~~~~~~~~Sampling~~~~~~~
-        self.providedRoiMasksTrain = True if cfg[cfg.ROI_MASKS_TR] else False
-        self.roiMasksFilepathsTrain = parseAbsFileLinesInList( getAbsPathEvenIfRelativeIsGiven(cfg[cfg.ROI_MASKS_TR], abs_path_to_cfg) ) if self.providedRoiMasksTrain else []
+        self.roiMasksFilepathsTrain = parseAbsFileLinesInList( getAbsPathEvenIfRelativeIsGiven(cfg[cfg.ROI_MASKS_TR], abs_path_to_cfg) ) if cfg[cfg.ROI_MASKS_TR] is not None else None
         
         samplingTypeToUseTr = cfg[cfg.TYPE_OF_SAMPLING_TR] if cfg[cfg.TYPE_OF_SAMPLING_TR] is not None else 3
         self.samplingTypeInstanceTrain = samplingType.SamplingType( self.log, samplingTypeToUseTr, num_classes)
@@ -120,7 +119,6 @@ class TrainSessionParameters(object) :
         if cfg[cfg.WEIGHT_MAPS_PER_CAT_FILEPATHS_TR] is not None :
             #[[case1-weightMap1, ..., caseN-weightMap1], [case1-weightMap2,...,caseN-weightMap2]]
             self.paths_to_wmaps_per_sampl_cat_per_subj_train = [parseAbsFileLinesInList(getAbsPathEvenIfRelativeIsGiven(weightMapConfPath, abs_path_to_cfg)) for weightMapConfPath in cfg[cfg.WEIGHT_MAPS_PER_CAT_FILEPATHS_TR]]
-        self.providedWeightMapsToSampleForEachCategoryTraining = self.paths_to_wmaps_per_sampl_cat_per_subj_train is not None
         
         #~~~~~~~~ Training Cycle ~~~~~~~~~~~
         self.numberOfEpochs = cfg[cfg.NUM_EPOCHS] if cfg[cfg.NUM_EPOCHS] is not None else 35
@@ -151,10 +149,16 @@ class TrainSessionParameters(object) :
             self.errReqPredLrSch()
         
         #~~~~~~~~~~~~~~ Augmentation~~~~~~~~~~~~~~
-        self.augm_params_tr = {'hist_dist': None, 'reflect': None, 'rotate90': None}
-        if cfg[cfg.AUGM_PARAMS_TR] is not None:
-            for key in cfg[cfg.AUGM_PARAMS_TR]:
-                self.augm_params_tr[key] = cfg[cfg.AUGM_PARAMS_TR][key] # For exact form of parameters, see ./deepmedic/dataManagement/augmentation.py
+        # Image level
+        self.augm_img_prms_tr = {'affine': None} # If var is None, no augm at all.
+        if cfg[cfg.AUGM_IMG_PRMS_TR] is not None:
+            self.augm_img_prms_tr['affine'] = AugmenterAffineParams(cfg[cfg.AUGM_IMG_PRMS_TR]['affine'])
+            
+        # Patch/Segment level
+        self.augm_sample_prms_tr = {'hist_dist': None, 'reflect': None, 'rotate90': None}
+        if cfg[cfg.AUGM_SAMPLE_PRMS_TR] is not None:
+            for key in cfg[cfg.AUGM_SAMPLE_PRMS_TR]:
+                self.augm_sample_prms_tr[key] = cfg[cfg.AUGM_SAMPLE_PRMS_TR][key] # For exact form of parameters, see ./deepmedic/dataManagement/augmentation.py
         
         #===================VALIDATION========================
         self.val_on_samples_during_train = cfg[cfg.PERFORM_VAL_SAMPLES] if cfg[cfg.PERFORM_VAL_SAMPLES] is not None else False
@@ -179,11 +183,9 @@ class TrainSessionParameters(object) :
             self.gtLabelsFilepathsVal = parseAbsFileLinesInList( getAbsPathEvenIfRelativeIsGiven(cfg[cfg.GT_LABELS_VAL], abs_path_to_cfg) ) if cfg[cfg.GT_LABELS_VAL] is not None else []
         else : # Dont perform either of the two validations.
             self.gtLabelsFilepathsVal = []
-        self.providedGtVal = True if self.gtLabelsFilepathsVal is not None else False
         
         #[Optionals]
-        self.providedRoiMasksVal = True if cfg[cfg.ROI_MASKS_VAL] is not None else False #For fast inf.
-        self.roiMasksFilepathsVal = parseAbsFileLinesInList( getAbsPathEvenIfRelativeIsGiven(cfg[cfg.ROI_MASKS_VAL], abs_path_to_cfg) ) if self.providedRoiMasksVal else []
+        self.roiMasksFilepathsVal = parseAbsFileLinesInList( getAbsPathEvenIfRelativeIsGiven(cfg[cfg.ROI_MASKS_VAL], abs_path_to_cfg) ) if cfg[cfg.ROI_MASKS_VAL] is not None else None #For fast inf.
         
         #~~~~~Validation on Samples~~~~~~~~
         self.n_samples_per_subep_val = cfg[cfg.NUM_VAL_SEGMS_LOADED_PERSUB] if cfg[cfg.NUM_VAL_SEGMS_LOADED_PERSUB] is not None else 3000
@@ -202,7 +204,6 @@ class TrainSessionParameters(object) :
         if cfg[cfg.WEIGHT_MAPS_PER_CAT_FILEPATHS_VAL] is not None:
             #[[case1-weightMap1, ..., caseN-weightMap1], [case1-weightMap2,...,caseN-weightMap2]]
             self.paths_to_wmaps_per_sampl_cat_per_subj_val = [parseAbsFileLinesInList(getAbsPathEvenIfRelativeIsGiven(weightMapConfPath, abs_path_to_cfg)) for weightMapConfPath in cfg[cfg.WEIGHT_MAPS_PER_CAT_FILEPATHS_VAL]]
-        self.providedWeightMapsToSampleForEachCategoryValidation = self.paths_to_wmaps_per_sampl_cat_per_subj_val is not None
         
         #~~~~~~Full inference on validation image~~~~~~
         self.num_epochs_between_val_on_whole_volumes = cfg[cfg.NUM_EPOCHS_BETWEEN_VAL_INF] if cfg[cfg.NUM_EPOCHS_BETWEEN_VAL_INF] is not None else 1
@@ -236,7 +237,7 @@ class TrainSessionParameters(object) :
             
         #===================== OTHERS======================
         #Preprocessing
-        self.padInputImagesBool = cfg[cfg.PAD_INPUT] if cfg[cfg.PAD_INPUT] is not None else True
+        self.pad_input_imgs = cfg[cfg.PAD_INPUT] if cfg[cfg.PAD_INPUT] is not None else True
         
         #Others useful internally or for reporting:
         self.numberOfCasesTrain = len(self.channelsFilepathsTrain)
@@ -313,10 +314,12 @@ class TrainSessionParameters(object) :
     def _backwards_compat_with_deprecated_cfg(self, cfg):
         # Augmentation
         if cfg[cfg.REFL_AUGM_PER_AXIS] is not None:
-            self.augm_params_tr['reflect'] = [ 0.5 if bool else 0. for bool in cfg[cfg.REFL_AUGM_PER_AXIS] ]
+            self.augm_sample_prms_tr['reflect'] = [ 0.5 if bool else 0. for bool in cfg[cfg.REFL_AUGM_PER_AXIS] ]
         if cfg[cfg.PERF_INT_AUGM_BOOL] == True:
-            self.augm_params_tr['hist_dist'] = {'shift': {'mu': cfg[cfg.INT_AUGM_SHIF_MUSTD][0], 'std': cfg[cfg.INT_AUGM_SHIF_MUSTD][1]},
+            self.augm_sample_prms_tr['hist_dist'] = {'shift': {'mu': cfg[cfg.INT_AUGM_SHIF_MUSTD][0], 'std': cfg[cfg.INT_AUGM_SHIF_MUSTD][1]},
                                                 'scale': {'mu': cfg[cfg.INT_AUGM_MULT_MUSTD][0], 'std': cfg[cfg.INT_AUGM_MULT_MUSTD][1]} }
+        if cfg[cfg.OLD_AUGM_SAMPLE_PRMS_TR] is not None:
+            self.log.print3("ERROR: In training's config, variable \'augm_params_tr\' is deprecated. Replace it with \'augm_sample_prms_tr\'.")
     
     def _makeFilepathsForPredictionsAndFeaturesVal( self,
                                                     absPathToFolderForPredictionsFromSession,
@@ -364,13 +367,11 @@ class TrainSessionParameters(object) :
         logPrint("Filepaths to Ground-Truth labels of the Training Cases = " + str(self.gtLabelsFilepathsTrain))
         
         logPrint("~~ Sampling (train) ~~")
-        logPrint("Region-Of-Interest Masks provided = " + str(self.providedRoiMasksTrain))
         logPrint("Filepaths to ROI Masks of the Training Cases = " + str(self.roiMasksFilepathsTrain))
         
         logPrint("Type of Sampling = " + str(self.samplingTypeInstanceTrain.getStringOfSamplingType()) + " ("+ str(self.samplingTypeInstanceTrain.getIntSamplingType()) + ")")
         logPrint("Sampling Categories = " + str(self.samplingTypeInstanceTrain.getStringsPerCategoryToSample()) )
-        logPrint("Percent of Samples to extract per Sampling Category = " + str(self.samplingTypeInstanceTrain.getPercentOfSamplesPerCategoryToSample()))
-        logPrint("Provided Weight-Maps, pointing where to focus sampling for each category (if False, samples will be extracted based on GT and ROI) = " + str(self.providedWeightMapsToSampleForEachCategoryTraining))
+        logPrint("Percent of Samples to extract per Sampling Category = " + str(self.samplingTypeInstanceTrain.getPercentPerCategoryToSample()))
         logPrint("Paths to weight-Maps for sampling of each category = " + str(self.paths_to_wmaps_per_sampl_cat_per_subj_train))
         
         logPrint("~~Training Cycle~~")
@@ -393,17 +394,20 @@ class TrainSessionParameters(object) :
         logPrint("[Expon] (Deprecated) parameters = " + str(self.lr_sched_params['expon']))
         
         logPrint("~~Data Augmentation During Training~~")
-        logPrint("Mu and std for shift and scale of histograms = " + str(self.augm_params_tr['hist_dist']))
-        logPrint("Probabilities of reflecting each axis = " + str(self.augm_params_tr['reflect']))
-        logPrint("Probabilities of rotating planes 0/90/180/270 degrees = " + str(self.augm_params_tr['rotate90']))
+        logPrint("Image level augmentation:")
+        logPrint("Parameters for image-level augmentation: " + str(self.augm_img_prms_tr))
+        if self.augm_img_prms_tr is not None:
+            logPrint("\t affine: " + str(self.augm_img_prms_tr['affine']))
+        logPrint("Patch level augmentation:")
+        logPrint("Mu and std for shift and scale of histograms = " + str(self.augm_sample_prms_tr['hist_dist']))
+        logPrint("Probabilities of reflecting each axis = " + str(self.augm_sample_prms_tr['reflect']))
+        logPrint("Probabilities of rotating planes 0/90/180/270 degrees = " + str(self.augm_sample_prms_tr['rotate90']))
         
         logPrint("~~~~~~~~~~~~~~~~~~Validation parameters~~~~~~~~~~~~~~~~")
         logPrint("Perform Validation on Samples throughout training? = " + str(self.val_on_samples_during_train))
         logPrint("Perform Full Inference on validation cases every few epochs? = " + str(self.val_on_whole_volumes))
         logPrint("Filepaths to Channels of the Validation Cases (Req for either of the above) = " + str(self.channelsFilepathsVal))
-        logPrint("Provided Ground-Truth for Validation = " + str(self.providedGtVal) + ". NOTE: Required for Val on samples. Not Req for Full-Inference, but DSC will be reported if provided.")
         logPrint("Filepaths to Ground-Truth labels of the Validation Cases = " + str(self.gtLabelsFilepathsVal))
-        logPrint("Provided ROI masks for Validation = " + str(self.providedRoiMasksVal) + ". NOTE: Validation-sampling and Full-Inference will be limited within this mask if provided. If not provided, Negative Validation samples will be extracted from whole volume, except if advanced-sampling is enabled, and the user provided separate weight-maps for sampling.")
         logPrint("Filepaths to ROI masks for Validation Cases = " + str(self.roiMasksFilepathsVal))
         
         logPrint("~~~~~~~Validation on Samples throughout Training~~~~~~~")
@@ -413,8 +417,7 @@ class TrainSessionParameters(object) :
         logPrint("~~ Sampling (val) ~~")
         logPrint("Type of Sampling = " + str(self.samplingTypeInstanceVal.getStringOfSamplingType()) + " ("+ str(self.samplingTypeInstanceVal.getIntSamplingType()) + ")")
         logPrint("Sampling Categories = " + str(self.samplingTypeInstanceVal.getStringsPerCategoryToSample()) )
-        logPrint("Percent of Samples to extract per Sampling Category = " + str(self.samplingTypeInstanceVal.getPercentOfSamplesPerCategoryToSample()))
-        logPrint("Provided Weight-Maps, pointing where to focus sampling for each category (if False, samples will be extracted based on GT and ROI) = " + str(self.providedWeightMapsToSampleForEachCategoryValidation))
+        logPrint("Percent of Samples to extract per Sampling Category = " + str(self.samplingTypeInstanceVal.getPercentPerCategoryToSample()))
         logPrint("Paths to weight-maps for sampling of each category = " + str(self.paths_to_wmaps_per_sampl_cat_per_subj_val))
         
         logPrint("~~~~~Validation with Full Inference on Validation Cases~~~~~")
@@ -453,7 +456,7 @@ class TrainSessionParameters(object) :
         logPrint("~~~~~~~~~~~~~~~~~~Other Generic Parameters~~~~~~~~~~~~~~~~")
         logPrint("Check whether input data has correct format (can slow down process) = " + str(self.run_input_checks))
         logPrint("~~Pre Processing~~")
-        logPrint("Pad Input Images = " + str(self.padInputImagesBool))
+        logPrint("Pad Input Images = " + str(self.pad_input_imgs))
         
         logPrint("========== Done with printing session's parameters ==========")
         logPrint("=============================================================\n")
@@ -473,17 +476,12 @@ class TrainSessionParameters(object) :
                 self.channelsFilepathsVal,
                 
                 self.gtLabelsFilepathsTrain,
-                self.providedGtVal,
                 self.gtLabelsFilepathsVal,
                 
-                self.providedWeightMapsToSampleForEachCategoryTraining, #Always true, since either GT labels or advanced-mask-where-to-pos
                 self.paths_to_wmaps_per_sampl_cat_per_subj_train,
-                self.providedWeightMapsToSampleForEachCategoryValidation, #If false, corresponding samples will be extracted uniformly from whole image.
                 self.paths_to_wmaps_per_sampl_cat_per_subj_val,
                 
-                self.providedRoiMasksTrain,
                 self.roiMasksFilepathsTrain,
-                self.providedRoiMasksVal,
                 self.roiMasksFilepathsVal,
                 
                 self.numberOfEpochs,
@@ -501,9 +499,10 @@ class TrainSessionParameters(object) :
                 self.batchsize_val_whole,
                 
                 #-------Preprocessing-----------
-                self.padInputImagesBool,
+                self.pad_input_imgs,
                 #-------Data Augmentation-------
-                self.augm_params_tr,
+                self.augm_img_prms_tr,
+                self.augm_sample_prms_tr,
                  
                 # --- Validation on whole volumes ---
                 self.val_on_whole_volumes,
@@ -528,7 +527,7 @@ class TrainSessionParameters(object) :
                 self.L1_reg_weight,
                 self.L2_reg_weight,
                 # Cost Schedules
-                #Weighting Classes differently in the CNN's cost function during training:
+                # Weighting Classes differently in the CNN's cost function during training:
                 self.reweight_classes_in_cost
                 ]
         return args

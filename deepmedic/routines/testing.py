@@ -29,9 +29,7 @@ def inferenceWholeVolumes(  sessionTf,
                             val_or_test,
                             savePredictedSegmAndProbsDict,
                             listOfFilepathsToEachChannelOfEachPatient,
-                            providedGtLabelsBool, #boolean. DSC calculation will be performed if this is provided.
                             listOfFilepathsToGtLabelsOfEachPatient,
-                            providedRoiMaskForFastInfBool,
                             listOfFilepathsToRoiMaskFastInfOfEachPatient,
                             namesForSavingSegmAndProbs,
                             suffixForSegmAndProbsDict,
@@ -39,7 +37,7 @@ def inferenceWholeVolumes(  sessionTf,
                             batchsize,
                             
                             #----Preprocessing------
-                            padInputImagesBool,
+                            pad_input_imgs,
                             
                             #--------For FM visualisation---------
                             saveIndividualFmImagesForVisualisation,
@@ -99,26 +97,23 @@ def inferenceWholeVolumes(  sessionTf,
         
         #load the image channels in cpu
         
-        [imageChannels,
+        (imageChannels,
         gtLabelsImage, #only for accurate/correct DICE1-2 calculation
         roiMask,
         arrayWithWeightMapsWhereToSampleForEachCategory, #only used in training. Placeholder here.
         tupleOfPaddingPerAxesLeftRight #( (padLeftR, padRightR), (padLeftC,padRightC), (padLeftZ,padRightZ)). All 0s when no padding.
-        ] = load_imgs_of_subject(
+        ) = load_imgs_of_subject(
                     log,
                     None,
                     "test",
                     False, # run_input_checks.
                     image_i,
                     listOfFilepathsToEachChannelOfEachPatient,
-                    providedGtLabelsBool,
                     listOfFilepathsToGtLabelsOfEachPatient,
-                    cnn3d.num_classes,
-                    False, # providedWeightMapsToSampleForEachCategory
                     None,
-                    providedRoiMaskForFastInfBool,
                     listOfFilepathsToRoiMaskFastInfOfEachPatient,
-                    padInputImagesBool,
+                    cnn3d.num_classes,
+                    pad_input_imgs,
                     recFieldCnn, # only used if padInputsBool
                     cnn3d.pathways[0].getShapeOfInput("test")[2:] # dimsOfPrimeSegmentRcz, for padding
                     )
@@ -130,7 +125,7 @@ def inferenceWholeVolumes(  sessionTf,
             multidimensionalImageWithAllToBeVisualisedFmsArray =  np.zeros([totalNumberOfFMsToProcess] + niiDimensions, dtype = "float32")
             
         # Tile the image and get all slices of the segments that it fully breaks down to.
-        [sliceCoordsOfSegmentsInImage] = getCoordsOfAllSegmentsOfAnImage(log,
+        sliceCoordsOfSegmentsInImage = getCoordsOfAllSegmentsOfAnImage(log,
                                                     cnn3d.pathways[0].getShapeOfInput("test")[2:], # dimsOfPrimarySegment
                                                     strideOfImagePartsPerDimensionInVoxels,
                                                     batchsize,
@@ -156,10 +151,10 @@ def inferenceWholeVolumes(  sessionTf,
             start_extract_time = time.time()
             
             sliceCoordsOfSegmentsInBatch = sliceCoordsOfSegmentsInImage[ batch_i*batchsize : (batch_i+1)*batchsize ]
-            [channsOfSegmentsPerPath] = extractSegmentsGivenSliceCoords(cnn3d,
-                                                                        sliceCoordsOfSegmentsInBatch,
-                                                                        imageChannels,
-                                                                        recFieldCnn )
+            channsOfSegmentsPerPath = extractSegmentsGivenSliceCoords(cnn3d,
+                                                                      sliceCoordsOfSegmentsInBatch,
+                                                                      imageChannels,
+                                                                      recFieldCnn )
             end_extract_time = time.time()
             extractTimePerSubject += end_extract_time - start_extract_time
             
@@ -293,11 +288,11 @@ def inferenceWholeVolumes(  sessionTf,
         # ================ SAVE PREDICTIONS =====================
         #== saving predicted segmentations ==
         predSegmentation = np.argmax(predProbMapsPerClass, axis=0) #The segmentation.
-        unpaddedPredSegmentation = predSegmentation if not padInputImagesBool else unpadCnnOutputs(predSegmentation, tupleOfPaddingPerAxesLeftRight)
+        unpaddedPredSegmentation = predSegmentation if not pad_input_imgs else unpadCnnOutputs(predSegmentation, tupleOfPaddingPerAxesLeftRight)
         # Multiply with the below to zero-out anything outside the RoiMask if given. Provided that RoiMask is binary [0,1].
         unpaddedRoiMaskIfGivenElse1 = 1
         if isinstance(roiMask, (np.ndarray)) : #If roiMask was given:
-            unpaddedRoiMaskIfGivenElse1 = roiMask if not padInputImagesBool else unpadCnnOutputs(roiMask, tupleOfPaddingPerAxesLeftRight)
+            unpaddedRoiMaskIfGivenElse1 = roiMask if not pad_input_imgs else unpadCnnOutputs(roiMask, tupleOfPaddingPerAxesLeftRight)
             
         if savePredictedSegmAndProbsDict["segm"] == True : #save predicted segmentation
             suffixToAdd = suffixForSegmAndProbsDict["segm"]
@@ -317,7 +312,7 @@ def inferenceWholeVolumes(  sessionTf,
                 suffixToAdd = suffixForSegmAndProbsDict["prob"] + str(class_i)
                 #Save the image. Pass the filename paths of the normal image so that I can dublicate the header info, eg RAS transformation.
                 predProbMapClassI = predProbMapsPerClass[class_i,:,:,:]
-                unpaddedPredProbMapClassI = predProbMapClassI if not padInputImagesBool else unpadCnnOutputs(predProbMapClassI, tupleOfPaddingPerAxesLeftRight)
+                unpaddedPredProbMapClassI = predProbMapClassI if not pad_input_imgs else unpadCnnOutputs(predProbMapClassI, tupleOfPaddingPerAxesLeftRight)
                 unpaddedPredProbMapClassIWithinRoi = unpaddedPredProbMapClassI * unpaddedRoiMaskIfGivenElse1
                 savePredImgToNiiWithOriginalHdr( unpaddedPredProbMapClassIWithinRoi,
                                                 namesForSavingSegmAndProbs,
@@ -340,7 +335,7 @@ def inferenceWholeVolumes(  sessionTf,
                             #If the user specifies to grab more feature maps than exist (eg 9999), correct it, replacing it with the number of FMs in the layer.
                             for fmActualNumber in range(indicesOfFmsToVisualiseForCertainLayerOfCertainPathway[0], indicesOfFmsToVisualiseForCertainLayerOfCertainPathway[1]) :
                                 fmToSave = multidimensionalImageWithAllToBeVisualisedFmsArray[currentIndexInTheMultidimensionalImageWithAllToBeVisualisedFmsArray]
-                                unpaddedFmToSave = fmToSave if not padInputImagesBool else unpadCnnOutputs(fmToSave, tupleOfPaddingPerAxesLeftRight)
+                                unpaddedFmToSave = fmToSave if not pad_input_imgs else unpadCnnOutputs(fmToSave, tupleOfPaddingPerAxesLeftRight)
                                 saveFmImgToNiiWithOriginalHdr(  unpaddedFmToSave,
                                                                 namesForSavingFms,
                                                                 listOfFilepathsToEachChannelOfEachPatient,
@@ -353,7 +348,7 @@ def inferenceWholeVolumes(  sessionTf,
                                 currentIndexInTheMultidimensionalImageWithAllToBeVisualisedFmsArray += 1
         if saveMultidimensionalImageWithAllFms :
             multidimensionalImageWithAllToBeVisualisedFmsArrayWith4thDimAsFms =  np.transpose(multidimensionalImageWithAllToBeVisualisedFmsArray, (1,2,3, 0) )
-            unpaddedMultidimensionalImageWithAllToBeVisualisedFmsArrayWith4thDimAsFms = multidimensionalImageWithAllToBeVisualisedFmsArrayWith4thDimAsFms if not padInputImagesBool else \
+            unpaddedMultidimensionalImageWithAllToBeVisualisedFmsArrayWith4thDimAsFms = multidimensionalImageWithAllToBeVisualisedFmsArrayWith4thDimAsFms if not pad_input_imgs else \
                 unpadCnnOutputs(multidimensionalImageWithAllToBeVisualisedFmsArrayWith4thDimAsFms, tupleOfPaddingPerAxesLeftRight)
             #Save a multidimensional Nii image. 3D Image, with the 4th dimension being all the Fms...
             save4DImgWithAllFmsToNiiWithOriginalHdr( unpaddedMultidimensionalImageWithAllToBeVisualisedFmsArrayWith4thDimAsFms,
@@ -364,10 +359,10 @@ def inferenceWholeVolumes(  sessionTf,
         #================= FINISHED SAVING RESULTS ====================
         
         #================= EVALUATE DSC FOR EACH SUBJECT ========================
-        if providedGtLabelsBool : # Ground Truth was provided for calculation of DSC. Do DSC calculation.
+        if listOfFilepathsToGtLabelsOfEachPatient is not None : # Ground Truth was provided for calculation of DSC. Do DSC calculation.
             log.print3("+++++++++++++++++++++ Reporting Segmentation Metrics for the subject #" + str(image_i) + " ++++++++++++++++++++++++++")
             #Unpad whatever needed.
-            unpaddedGtLabelsImage = gtLabelsImage if not padInputImagesBool else unpadCnnOutputs(gtLabelsImage, tupleOfPaddingPerAxesLeftRight)
+            unpaddedGtLabelsImage = gtLabelsImage if not pad_input_imgs else unpadCnnOutputs(gtLabelsImage, tupleOfPaddingPerAxesLeftRight)
             #calculate DSC per class.
             for class_i in range(0, NUMBER_OF_CLASSES) :
                 if class_i == 0 : #in this case, do the evaluation for the segmentation of the WHOLE FOREGROUND (ie, all classes merged except background)
@@ -394,7 +389,7 @@ def inferenceWholeVolumes(  sessionTf,
             printExplanationsAboutDice(log)
             
     #================= Loops for all patients have finished. Now lets just report the average DSC over all the processed patients. ====================
-    if providedGtLabelsBool and total_number_of_images>0 : # Ground Truth was provided for calculation of DSC. Do DSC calculation.
+    if listOfFilepathsToGtLabelsOfEachPatient is not None and total_number_of_images>0 : # Ground Truth was provided for calculation of DSC. Do DSC calculation.
         log.print3("+++++++++++++++++++++++++++++++ Segmentation of all subjects finished +++++++++++++++++++++++++++++++++++")
         log.print3("+++++++++++++++++++++ Reporting Average Segmentation Metrics over all subjects ++++++++++++++++++++++++++")
         meanDiceCoeffs1 = getMeanPerColOf2dListExclNA(diceCoeffs1, NA_PATTERN)

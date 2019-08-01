@@ -38,10 +38,8 @@ class TestSessionParameters(object) :
         #[[case1-ch1, ..., caseN-ch1], [case1-ch2,...,caseN-ch2]]
         listOfAListPerChannelWithFilepathsOfAllCases = [parseAbsFileLinesInList(getAbsPathEvenIfRelativeIsGiven(channelConfPath, abs_path_to_cfg)) for channelConfPath in cfg[cfg.CHANNELS]]
         self.channelsFilepaths = [ list(item) for item in zip(*tuple(listOfAListPerChannelWithFilepathsOfAllCases)) ] # [[case1-ch1, case1-ch2], ..., [caseN-ch1, caseN-ch2]]
-        self.providedGt = True if cfg[cfg.GT_LABELS] is not None else False
         self.gtLabelsFilepaths = parseAbsFileLinesInList( getAbsPathEvenIfRelativeIsGiven(cfg[cfg.GT_LABELS], abs_path_to_cfg) ) if cfg[cfg.GT_LABELS] is not None else None
-        self.providedRoiMasks = True if cfg[cfg.ROI_MASKS] is not None else False
-        self.roiMasksFilepaths = parseAbsFileLinesInList( getAbsPathEvenIfRelativeIsGiven(cfg[cfg.ROI_MASKS], abs_path_to_cfg) ) if self.providedRoiMasks else None
+        self.roiMasksFilepaths = parseAbsFileLinesInList( getAbsPathEvenIfRelativeIsGiven(cfg[cfg.ROI_MASKS], abs_path_to_cfg) ) if cfg[cfg.ROI_MASKS] is not None else None
         
         #Output:
         self.namesToSavePredictionsAndFeatures = parseFileLinesInList( getAbsPathEvenIfRelativeIsGiven(cfg[cfg.NAMES_FOR_PRED_PER_CASE], abs_path_to_cfg) ) if cfg[cfg.NAMES_FOR_PRED_PER_CASE] is not None else None #CAREFUL: different parser! #Optional. Not required if not saving results.
@@ -64,7 +62,7 @@ class TestSessionParameters(object) :
         self.filepathsToSaveFeaturesForEachPatient = None #Filled by call to self.makeFilepathsForPredictionsAndFeatures()
         
         #Preprocessing
-        self.padInputImagesBool = cfg[cfg.PAD_INPUT] if cfg[cfg.PAD_INPUT] is not None else True
+        self.pad_input_imgs = cfg[cfg.PAD_INPUT] if cfg[cfg.PAD_INPUT] is not None else True
         
         #Others useful internally or for reporting:
         self.numberOfCases = len(self.channelsFilepaths)
@@ -109,14 +107,8 @@ class TestSessionParameters(object) :
         logPrint("~~~~~~~~~~~~~~~~~~~~INPUT~~~~~~~~~~~~~~~~")
         logPrint("Number of cases to perform inference on = " + str(self.numberOfCases))
         logPrint("Paths to the channels of each case = " + str(self.channelsFilepaths))
-        logPrint("User provided Ground Truth labels for DSC calculation = " + str(self.providedGt))
-        if not self.providedGt :
-            logPrint(">>> WARN: The DSC accuracy will NOT be evaluated and reported!")
-        logPrint("Paths to the provided GT labels per case = " + str(self.gtLabelsFilepaths))
-        logPrint("User provided Region-Of-Interest Masks for faster inference = " + str(self.providedRoiMasks))
+        logPrint("Paths to provided GT labels per case = " + str(self.gtLabelsFilepaths))
         logPrint("Filepaths of the ROI Masks provided per case = " + str(self.roiMasksFilepaths))
-        if not self.providedRoiMasks :
-            logPrint(">>> WARN: Inference will be performed on whole scan. Consider providing a ROI image for faster results, if possible!")
         logPrint("Batch size = " + str(self.batchsize))
         
         logPrint("~~~~~~~~~~~~~~~~~~~OUTPUT~~~~~~~~~~~~~~~")
@@ -140,8 +132,8 @@ class TestSessionParameters(object) :
         logPrint("Save Feature Maps at = " + str(self.filepathsToSaveFeaturesForEachPatient))
         
         logPrint("~~~~~~~ Parameters for Preprocessing ~~~~~~")
-        logPrint("Pad Input Images = " + str(self.padInputImagesBool))
-        if not self.padInputImagesBool :
+        logPrint("Pad Input Images = " + str(self.pad_input_imgs))
+        if not self.pad_input_imgs :
             logPrint(">>> WARN: Inference near the borders of the image might be incomplete if not padded! Although some speed is gained if not padded. Task-specific, your choice.")
         logPrint("========== Done with printing session's parameters ==========")
         logPrint("=============================================================\n")
@@ -155,21 +147,14 @@ class TestSessionParameters(object) :
                 {"segm": self.saveSegmentation, "prob": self.saveProbMapsBoolPerClass},
                 
                 self.channelsFilepaths,
-                
-                self.providedGt,
                 self.gtLabelsFilepaths,
-                
-                self.providedRoiMasks,
                 self.roiMasksFilepaths,
-                
                 self.filepathsToSavePredictionsForEachPatient,
                 self.suffixForSegmAndProbsDict,
                 # Hyper parameters
                 self.batchsize,
-                
                 #----Preprocessing------
-                self.padInputImagesBool,
-                
+                self.pad_input_imgs,
                 #--------For FM visualisation---------
                 self.saveIndividualFmImages,
                 self.saveMultidimensionalImageWithAllFms,

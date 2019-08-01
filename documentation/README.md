@@ -3,6 +3,11 @@ DeepMedic
 
 ### News
 
+11 June 2019 (v0.7.4):
+* Added augmentation via affine transforms, rotation & scaling. Off by default (slows down training).
+* Redistribute samples of non-existent class & code refactoring in sampling.
+* Added a wider DM model config, seems to work better in a few studies.
+
 19 Mar 2019 (v0.7.3):
 * Default sampling for training now done on a per-class basis. Better now that DM is applied for arbitrary tasks.
 
@@ -88,6 +93,7 @@ The system requires the following:
 - [TensorFlow](https://www.tensorflow.org/): The Deep Learning library for back end.
 - [NiBabel](http://nipy.org/nibabel/): The library used for loading NIFTI files.
 - [numpy](http://www.numpy.org/) : General purpose array-processing package.
+- [scipy](http://www.scipy.org/) : Scientific packages. Used for image operations e.g. augmentation.
 
 Latest versions tested:  
 As of Feb 2019, testing of v0.7.1 was done using Python 3.5.2, Tensorflow 1.12.0, nibabel 2.3.3, numpy 1.16.1.  

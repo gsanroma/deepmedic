@@ -128,17 +128,12 @@ def do_training(sessionTf,
                 listOfFilepathsToEachChannelOfEachPatientValidation,
                 
                 listOfFilepathsToGtLabelsOfEachPatientTraining,
-                providedGtForValidationBool,
                 listOfFilepathsToGtLabelsOfEachPatientValidationOnSamplesAndDsc,
                 
-                providedWeightMapsToSampleForEachCategoryTraining,
                 paths_to_wmaps_per_sampl_cat_per_subj_train,
-                providedWeightMapsToSampleForEachCategoryValidation,
                 paths_to_wmaps_per_sampl_cat_per_subj_val,
                 
-                providedRoiMaskForTrainingBool,
-                listOfFilepathsToRoiMaskOfEachPatientTraining, # Also needed for normalization-augmentation
-                providedRoiMaskForValidationBool,
+                listOfFilepathsToRoiMaskOfEachPatientTraining,
                 listOfFilepathsToRoiMaskOfEachPatientValidation,
                 
                 n_epochs, # Every epoch the CNN model is saved.
@@ -156,9 +151,10 @@ def do_training(sessionTf,
                 batchsize_val_whole,
                 
                 #-------Preprocessing-----------
-                padInputImagesBool,
+                pad_input_imgs,
                 #-------Data Augmentation-------
-                augm_params,
+                augm_img_prms,
+                augm_sample_prms,
                 
                 # Validation
                 val_on_whole_volumes,
@@ -191,12 +187,11 @@ def do_training(sessionTf,
                                 samplingTypeInstanceTraining,
                                 listOfFilepathsToEachChannelOfEachPatientTraining,
                                 listOfFilepathsToGtLabelsOfEachPatientTraining,
-                                providedRoiMaskForTrainingBool,
                                 listOfFilepathsToRoiMaskOfEachPatientTraining,
-                                providedWeightMapsToSampleForEachCategoryTraining,
                                 paths_to_wmaps_per_sampl_cat_per_subj_train,
-                                padInputImagesBool,
-                                augm_params )
+                                pad_input_imgs,
+                                augm_img_prms,
+                                augm_sample_prms )
     args_for_sampling_val = (   log,
                                 "val",
                                 num_parallel_proc_sampling,
@@ -207,12 +202,11 @@ def do_training(sessionTf,
                                 samplingTypeInstanceValidation,
                                 listOfFilepathsToEachChannelOfEachPatientValidation,
                                 listOfFilepathsToGtLabelsOfEachPatientValidationOnSamplesAndDsc,
-                                providedRoiMaskForValidationBool,
                                 listOfFilepathsToRoiMaskOfEachPatientValidation,
-                                providedWeightMapsToSampleForEachCategoryValidation,
                                 paths_to_wmaps_per_sampl_cat_per_subj_val,
-                                padInputImagesBool,
-                                None ) # no augmentation in validation.
+                                pad_input_imgs,
+                                None, # no augmentation in val.
+                                None ) # no augmentation in val.
     
     sampling_job_submitted_train = False
     sampling_job_submitted_val = False
@@ -249,18 +243,18 @@ def do_training(sessionTf,
                 if val_on_samples_during_train :
                     if worker_pool is None: # Sequential processing.
                         log.print3(id_str+" NO MULTIPROC: Sampling for subepoch #"+str(subepoch)+" [VALIDATION] will be done by main thread.")
-                        [channsOfSegmentsForSubepPerPathwayVal,
-                        labelsForCentralOfSegmentsForSubepVal] = getSampledDataAndLabelsForSubepoch( *args_for_sampling_val )
+                        (channsOfSegmentsForSubepPerPathwayVal,
+                        labelsForCentralOfSegmentsForSubepVal) = getSampledDataAndLabelsForSubepoch( *args_for_sampling_val )
                     elif sampling_job_submitted_val : #It was done in parallel with the training of the previous epoch, just grab results.
-                        [channsOfSegmentsForSubepPerPathwayVal,
-                        labelsForCentralOfSegmentsForSubepVal] = parallelJobToGetDataForNextValidation.get()
+                        (channsOfSegmentsForSubepPerPathwayVal,
+                        labelsForCentralOfSegmentsForSubepVal) = parallelJobToGetDataForNextValidation.get()
                         sampling_job_submitted_val = False
                     else : # Not previously submitted in case of first epoch or after a full-volumes validation.
                         assert subepoch == 0
                         log.print3(id_str+" MULTIPROC: Before Validation in subepoch #"+str(subepoch)+", submitting sampling job for next [VALIDATION].")
                         parallelJobToGetDataForNextValidation = worker_pool.apply_async(getSampledDataAndLabelsForSubepoch, args_for_sampling_val)
-                        [channsOfSegmentsForSubepPerPathwayVal,
-                        labelsForCentralOfSegmentsForSubepVal] = parallelJobToGetDataForNextValidation.get()
+                        (channsOfSegmentsForSubepPerPathwayVal,
+                        labelsForCentralOfSegmentsForSubepVal) = parallelJobToGetDataForNextValidation.get()
                         sampling_job_submitted_val = False
 
                     
@@ -291,18 +285,18 @@ def do_training(sessionTf,
                 #-------------------------GET DATA FOR THIS SUBEPOCH's TRAINING---------------------------------
                 if worker_pool is None: # Sequential processing.
                     log.print3(id_str+" NO MULTIPROC: Sampling for subepoch #"+str(subepoch)+" [TRAINING] will be done by main thread.")
-                    [channsOfSegmentsForSubepPerPathwayTrain,
-                    labelsForCentralOfSegmentsForSubepTrain] = getSampledDataAndLabelsForSubepoch( *args_for_sampling_train )
+                    (channsOfSegmentsForSubepPerPathwayTrain,
+                    labelsForCentralOfSegmentsForSubepTrain) = getSampledDataAndLabelsForSubepoch( *args_for_sampling_train )
                 elif sampling_job_submitted_train: # Sampling job should have been done in parallel with previous train/val. Just grab results.
-                    [channsOfSegmentsForSubepPerPathwayTrain,
-                    labelsForCentralOfSegmentsForSubepTrain] = parallelJobToGetDataForNextTraining.get()
+                    (channsOfSegmentsForSubepPerPathwayTrain,
+                    labelsForCentralOfSegmentsForSubepTrain) = parallelJobToGetDataForNextTraining.get()
                     sampling_job_submitted_train = False
                 else:  # Not previously submitted in case of first epoch or after a full-volumes validation.
                     assert subepoch == 0
                     log.print3(id_str+" MULTIPROC: Before Training in subepoch #"+str(subepoch)+", submitting sampling job for next [TRAINING].")
                     parallelJobToGetDataForNextTraining = worker_pool.apply_async(getSampledDataAndLabelsForSubepoch, args_for_sampling_train)
-                    [channsOfSegmentsForSubepPerPathwayTrain,
-                    labelsForCentralOfSegmentsForSubepTrain] = parallelJobToGetDataForNextTraining.get()
+                    (channsOfSegmentsForSubepPerPathwayTrain,
+                    labelsForCentralOfSegmentsForSubepTrain) = parallelJobToGetDataForNextTraining.get()
                     sampling_job_submitted_train = False
 
                         
@@ -368,9 +362,7 @@ def do_training(sessionTf,
                                 "val",
                                 savePredictedSegmAndProbsDict,
                                 listOfFilepathsToEachChannelOfEachPatientValidation,
-                                providedGtForValidationBool,
                                 listOfFilepathsToGtLabelsOfEachPatientValidationOnSamplesAndDsc,
-                                providedRoiMaskForValidationBool,
                                 listOfFilepathsToRoiMaskOfEachPatientValidation,
                                 namesForSavingSegmAndProbs = namesForSavingSegmAndProbs,
                                 suffixForSegmAndProbsDict = suffixForSegmAndProbsDict,
@@ -378,13 +370,13 @@ def do_training(sessionTf,
                                 batchsize = batchsize_val_whole,
                                 
                                 #----Preprocessing------
-                                padInputImagesBool=padInputImagesBool,
+                                pad_input_imgs = pad_input_imgs,
                                 
                                 #--------For FM visualisation---------
-                                saveIndividualFmImagesForVisualisation=saveIndividualFmImagesForVisualisation,
-                                saveMultidimensionalImageWithAllFms=saveMultidimensionalImageWithAllFms,
-                                indicesOfFmsToVisualisePerPathwayTypeAndPerLayer=indicesOfFmsToVisualisePerPathwayTypeAndPerLayer,
-                                namesForSavingFms=namesForSavingFms
+                                saveIndividualFmImagesForVisualisation = saveIndividualFmImagesForVisualisation,
+                                saveMultidimensionalImageWithAllFms = saveMultidimensionalImageWithAllFms,
+                                indicesOfFmsToVisualisePerPathwayTypeAndPerLayer = indicesOfFmsToVisualisePerPathwayTypeAndPerLayer,
+                                namesForSavingFms = namesForSavingFms
                                 )
         end_time_train = time.time()
         log.print3("TIMING: Training process lasted: {0:.1f}".format(end_time_train-start_time_train)+" secs.")
